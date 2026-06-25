@@ -1,0 +1,21 @@
+#!/bin/bash
+
+# Stash whatever is uncommitted, run "git cleanup" on the current branch, create
+# a new branch with the given name off of the latest version of "main", then 
+# unstash the changes
+
+main(){
+  local new_branch git_root
+
+  new_branch="$1"
+  git_root="$(git rev-parse --show-toplevel)"
+
+  pushd "$git_root" \
+  && git add . \
+  && git stash \
+  && git cleanup \
+  && git switch --create "$new_branch" \
+  && git stash pop \
+  && popd
+}
+main "$@"

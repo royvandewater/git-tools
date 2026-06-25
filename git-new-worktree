@@ -1,0 +1,146 @@
+#!/bin/bash
+
+# Create a new worktree for a sibipro project off of its main branch.
+#
+# Usage: git new-worktree <project> <branch>
+#   e.g. git new-worktree rza ordering/some-feature
+#
+# The project repo is searched for under ~/Projects/sibipro/<project> and
+# ~/Projects/royvandewater/<project>. The new worktree is created under the
+# matching base at <base>/worktrees/<project>/<branch>.
+
+err_echo() {
+  echo "$@" 1>&2;
+}
+
+main(){
+  local project branch repo worktree default_branch app_name app_dir skip_setup
+
+  skip_setup="false"
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --no-setup)
+        skip_setup="true"
+        shift
+        ;;
+      --)
+        shift
+        break
+        ;;
+      -*)
+        err_echo "Unknown flag: $1"
+        exit 1
+        ;;
+      *)
+        break
+        ;;
+    esac
+  done
+
+  if [ $# -ne 2 ]; then
+    err_echo "Usage: git new-worktree [--no-setup] <project> <branch>"
+    err_echo "  e.g. git new-worktree rza ordering/some-feature"
+    exit 1
+  fi
+
+  project="$1"
+  branch="$2"
+
+  local base bases found_base
+  bases=("$HOME/Projects/sibipro" "$HOME/Projects/royvandewater")
+  found_base=""
+  for base in "${bases[@]}"; do
+    if [ -d "$base/$project.git" ]; then
+      repo="$base/$project.git"
+      found_base="$base"
+      break
+    elif [ -d "$base/$project/.git" ] || [ -f "$base/$project/.git" ]; then
+      repo="$base/$project"
+      found_base="$base"
+      break
+    fi
+  done
+
+  if [ -z "$found_base" ]; then
+    err_echo "Not a git repo in any of: ${bases[*]} (looking for $project or $project.git)"
+    exit 1
+  fi
+
+  worktree="$found_base/worktrees/$project/$branch"
+
+  if [ -e "$worktree" ]; then
+    err_echo "Worktree path already exists: $worktree"
+    exit 1
+  fi
+
+  local remote_head
+  remote_head="$(git -C "$repo" ls-remote --symref origin HEAD 2>/dev/null)" || {
+    err_echo "Failed to query origin for default branch"
+    exit 1
+  }
+  default_branch="$(echo "$remote_head" | sed -n 's|^ref: refs/heads/\([^	]*\)	HEAD$|\1|p')"
+  if [ -z "$default_branch" ]; then
+    err_echo "Could not determine remote default branch from origin"
+    exit 1
+  fi
+
+  app_name="$(dirname $branch)"
+
+  mkdir -p "$(dirname "$worktree")" || exit 1
+
+  local remote_has_branch
+  remote_has_branch="false"
+  if git -C "$repo" ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+    remote_has_branch="true"
+    git -C "$repo" fetch origin "$branch" || exit 1
+  fi
+
+  git -C "$repo" fetch origin "$default_branch" || exit 1
+  local default_sha
+  default_sha="$(git -C "$repo" rev-parse FETCH_HEAD)" || {
+    err_echo "Failed to resolve fetched default branch SHA"
+    exit 1
+  }
+
+  if git -C "$repo" show-ref --verify --quiet "refs/heads/$branch"; then
+    err_echo "Using existing local branch: $branch"
+    git -C "$repo" worktree add "$worktree" "$branch" || exit 1
+  elif [ "$remote_has_branch" = "true" ]; then
+    err_echo "Using existing remote branch: origin/$branch"
+    local remote_sha
+    remote_sha="$(git -C "$repo" ls-remote origin "refs/heads/$branch" | awk '{print $1}')"
+    git -C "$repo" worktree add -b "$branch" "$worktree" "$remote_sha" || exit 1
+  else
+    git -C "$repo" worktree add -b "$branch" "$worktree" "$default_sha" || exit 1
+  fi
+
+  app_dir="$worktree/apps/$app_name"
+  if [ ! -d "$app_dir" ]; then
+    app_dir="$worktree"
+  fi
+
+  if [ "$skip_setup" = "true" ]; then
+    err_echo "Skipping setup.sh (--no-setup)."
+  else
+    local boundary search_dir setup_script
+    boundary="$found_base/worktrees"
+    setup_script=""
+    search_dir="$(dirname "$worktree")"
+    while [ "$search_dir" != "$boundary" ] && [ "$search_dir" != "/" ]; do
+      if [ -x "$search_dir/setup.sh" ]; then
+        setup_script="$search_dir/setup.sh"
+        break
+      fi
+      search_dir="$(dirname "$search_dir")"
+    done
+
+    if [ -n "$setup_script" ]; then
+      (cd "$app_dir" && "$setup_script") || exit 1
+    else
+      err_echo "No setup.sh found between $worktree and $boundary; skipping."
+    fi
+  fi
+
+  echo "Worktree ready: $app_dir"
+}
+main "$@"
