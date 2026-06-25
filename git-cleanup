@@ -1,0 +1,27 @@
+#!/bin/bash
+
+err_echo() {
+  echo "$@" 1>&2;
+}
+
+main(){
+  local status branch
+  status="$(gh pr status --json state --jq '.currentBranch.state')"
+
+  branch="$(git branch --show-current)"
+  if [ "$branch" == "main" ]; then
+    err_echo "We are currently on the main branch, cowardly refusing to do anything"
+    exit 1
+  fi
+
+  if [ "$status" != "MERGED" ] && [ "$FORCE" != "true" ]; then
+    err_echo "PR associated with current branch has not been merged, cowardly refusing to do anything. User FORCE=true to override."
+    exit 1
+  fi
+
+  git switch main \
+  && git branch -D "$branch" \
+  && git fetch --prune \
+  && git merge --ff-only origin/main
+}
+main "$@"
