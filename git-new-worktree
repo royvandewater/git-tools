@@ -5,9 +5,15 @@
 # Usage: git new-worktree <project> <branch>
 #   e.g. git new-worktree rza ordering/some-feature
 #
-# The project repo is searched for under ~/Projects/sibipro/<project> and
-# ~/Projects/royvandewater/<project>. The new worktree is created under the
-# matching base at <base>/worktrees/<project>/<branch>.
+# The project repo is searched for in this order, preferring a bare repo in a
+# 'bare' subdirectory over a non-bare one, stopping at the first match:
+#   1. ~/Projects/sibipro/bare/<project>.git (or <project>)
+#   2. ~/Projects/royvandewater/bare/<project>.git (or <project>)
+#   3. ~/Projects/sibipro/<project> (or <project>.git)
+#   4. ~/Projects/royvandewater/<project> (or <project>.git)
+# The new worktree is created under the matching base at
+# <base>/worktrees/<project>/<branch> (for a 'bare' match, <base> is the parent
+# of the 'bare' directory).
 
 err_echo() {
   echo "$@" 1>&2;
@@ -47,9 +53,28 @@ main(){
   branch="$2"
 
   local base bases found_base
-  bases=("$HOME/Projects/sibipro" "$HOME/Projects/royvandewater")
+  bases=(
+    "$HOME/Projects/sibipro/bare"
+    "$HOME/Projects/royvandewater/bare"
+    "$HOME/Projects/sibipro"
+    "$HOME/Projects/royvandewater"
+  )
   found_base=""
   for base in "${bases[@]}"; do
+    if [ "$(basename "$base")" = "bare" ]; then
+      # Repos here are bare, stored as <base>/<project>.git (or <project>).
+      # Worktrees still live under the parent of the 'bare' directory.
+      if [ -d "$base/$project.git" ]; then
+        repo="$base/$project.git"
+        found_base="$(dirname "$base")"
+        break
+      elif [ -d "$base/$project" ]; then
+        repo="$base/$project"
+        found_base="$(dirname "$base")"
+        break
+      fi
+      continue
+    fi
     if [ -d "$base/$project.git" ]; then
       repo="$base/$project.git"
       found_base="$base"
