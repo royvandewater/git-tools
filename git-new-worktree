@@ -98,34 +98,55 @@ main(){
     exit 1
   fi
 
-  local remote_head
-  remote_head="$(git -C "$repo" ls-remote --symref origin HEAD 2>/dev/null)" || {
-    err_echo "Failed to query origin for default branch"
-    exit 1
-  }
-  default_branch="$(echo "$remote_head" | sed -n 's|^ref: refs/heads/\([^	]*\)	HEAD$|\1|p')"
-  if [ -z "$default_branch" ]; then
-    err_echo "Could not determine remote default branch from origin"
-    exit 1
+  local has_origin
+  has_origin="false"
+  if git -C "$repo" remote get-url origin >/dev/null 2>&1; then
+    has_origin="true"
+  fi
+
+  if [ "$has_origin" = "true" ]; then
+    local remote_head
+    remote_head="$(git -C "$repo" ls-remote --symref origin HEAD 2>/dev/null)" || {
+      err_echo "Failed to query origin for default branch"
+      exit 1
+    }
+    default_branch="$(echo "$remote_head" | sed -n 's|^ref: refs/heads/\([^	]*\)	HEAD$|\1|p')"
+    if [ -z "$default_branch" ]; then
+      err_echo "Could not determine remote default branch from origin"
+      exit 1
+    fi
+  else
+    err_echo "No origin remote; using local default branch."
+    default_branch="$(git -C "$repo" symbolic-ref --short HEAD 2>/dev/null)"
+    if [ -z "$default_branch" ]; then
+      err_echo "Could not determine local default branch from HEAD"
+      exit 1
+    fi
   fi
 
   app_name="$(dirname $branch)"
 
   mkdir -p "$(dirname "$worktree")" || exit 1
 
-  local remote_has_branch
+  local remote_has_branch default_sha
   remote_has_branch="false"
-  if git -C "$repo" ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
-    remote_has_branch="true"
-    git -C "$repo" fetch origin "$branch" || exit 1
-  fi
+  if [ "$has_origin" = "true" ]; then
+    if git -C "$repo" ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+      remote_has_branch="true"
+      git -C "$repo" fetch origin "$branch" || exit 1
+    fi
 
-  git -C "$repo" fetch origin "$default_branch" || exit 1
-  local default_sha
-  default_sha="$(git -C "$repo" rev-parse FETCH_HEAD)" || {
-    err_echo "Failed to resolve fetched default branch SHA"
-    exit 1
-  }
+    git -C "$repo" fetch origin "$default_branch" || exit 1
+    default_sha="$(git -C "$repo" rev-parse FETCH_HEAD)" || {
+      err_echo "Failed to resolve fetched default branch SHA"
+      exit 1
+    }
+  else
+    default_sha="$(git -C "$repo" rev-parse "refs/heads/$default_branch")" || {
+      err_echo "Failed to resolve local default branch SHA"
+      exit 1
+    }
+  fi
 
   if git -C "$repo" show-ref --verify --quiet "refs/heads/$branch"; then
     err_echo "Using existing local branch: $branch"
