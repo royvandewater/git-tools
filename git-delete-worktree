@@ -45,16 +45,18 @@ main(){
   fi
   echo "Worktree removed. cd out of $worktree — it no longer exists."
 
-  if [ -z "$branch" ]; then
-    err_echo "Worktree was detached; no branch to delete."
-    return 0
-  fi
-
-  # cd into the main worktree so the branch deletion has a valid working directory
-  # (our original cwd was inside the now-removed worktree).
+  # cd into the main worktree so the remaining git commands have a valid working
+  # directory (our original cwd was inside the now-removed worktree).
   cd "$(dirname "$common_dir")" || exit 1
 
-  echo "Deleting branch: $branch"
-  git --git-dir="$common_dir" branch $delete_flag "$branch"
+  if [ -z "$branch" ]; then
+    err_echo "Worktree was detached; no branch to delete."
+  else
+    echo "Deleting branch: $branch"
+    git --git-dir="$common_dir" branch $delete_flag "$branch"
+  fi
+
+  echo "Fetching remotes and pruning stale remote-tracking branches"
+  git --git-dir="$common_dir" fetch --all --prune
 }
 main "$@"
