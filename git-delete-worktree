@@ -58,5 +58,41 @@ main(){
 
   echo "Fetching remotes and pruning stale remote-tracking branches"
   git --git-dir="$common_dir" fetch --all --prune
+
+  sync_default_branch "$common_dir"
+}
+
+# Fast-forward the local default branch (main/master/whatever origin says) to
+# match the remote, without checking it out. Mirrors the pattern in
+# ~/Projects/royvandewater/reel-in-the-fleet: ask origin for its default branch,
+# then fetch straight into that local ref. The refspec fetch only fast-forwards,
+# so it refuses (rather than clobbers) a divergent local branch.
+sync_default_branch(){
+  local common_dir="$1" default_branch
+
+  if ! git --git-dir="$common_dir" remote get-url origin >/dev/null 2>&1; then
+    err_echo "No origin remote; skipping default branch sync."
+    return
+  fi
+
+  # Ask the remote what its default branch actually is, rather than assuming
+  # "main" — some repos use master or something else entirely.
+  default_branch="$(git --git-dir="$common_dir" ls-remote --symref origin HEAD 2>/dev/null \
+    | awk '/^ref:/ { sub("refs/heads/", "", $2); print $2; exit }')"
+  if [ -z "$default_branch" ]; then
+    err_echo "Could not determine remote default branch; skipping default branch sync."
+    return
+  fi
+
+  # If the default branch is checked out in a worktree, git won't let us update
+  # its ref out from under it. Leave it for the user to fast-forward themselves.
+  if git --git-dir="$common_dir" worktree list --porcelain \
+    | grep -q "^branch refs/heads/$default_branch\$"; then
+    err_echo "Default branch '$default_branch' is checked out in a worktree; leaving it alone."
+    return
+  fi
+
+  echo "Fast-forwarding local $default_branch to origin/$default_branch"
+  git --git-dir="$common_dir" fetch origin "refs/heads/$default_branch:refs/heads/$default_branch"
 }
 main "$@"
