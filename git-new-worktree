@@ -20,9 +20,10 @@ err_echo() {
 }
 
 main(){
-  local project branch repo worktree default_branch app_name app_dir skip_setup
+  local project branch repo worktree default_branch app_name app_dir skip_setup setup_status
 
   skip_setup="false"
+  setup_status=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --no-setup)
@@ -181,10 +182,16 @@ main(){
     done
 
     if [ -n "$setup_script" ]; then
-      (cd "$app_dir" && "$setup_script") || exit 1
+      (cd "$app_dir" && "$setup_script") || setup_status=$?
     else
       err_echo "No setup.sh found between $worktree and $boundary; skipping."
     fi
+  fi
+
+  if [ "$setup_status" -ne 0 ]; then
+    err_echo "setup.sh failed with status $setup_status"
+    echo "Worktree ready (setup failed): $app_dir"
+    exit "$setup_status"
   fi
 
   echo "Worktree ready: $app_dir"
