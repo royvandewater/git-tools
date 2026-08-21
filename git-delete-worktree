@@ -12,6 +12,16 @@ err_echo() {
   echo "$@" 1>&2;
 }
 
+absorb_eof() {
+  local discarded
+  read -r -t 2 -n 1 discarded 2>/dev/null
+}
+
+die() {
+  absorb_eof
+  exit 1
+}
+
 main(){
   local force worktree git_dir common_dir branch delete_flag
 
@@ -23,7 +33,7 @@ main(){
 
   if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     err_echo "Not inside a git working tree."
-    exit 1
+    die
   fi
 
   git_dir="$(git rev-parse --git-dir)"
@@ -33,7 +43,7 @@ main(){
 
   if [ "$git_dir" = "$common_dir" ]; then
     err_echo "Refusing to delete: this is the main working tree, not a linked worktree."
-    exit 1
+    die
   fi
 
   worktree="$(git rev-parse --show-toplevel)"
@@ -41,13 +51,13 @@ main(){
 
   echo "Removing worktree: $worktree"
   if ! git --git-dir="$common_dir" worktree remove $force "$worktree"; then
-    exit 1
+    die
   fi
   echo "Worktree removed. cd out of $worktree — it no longer exists."
 
   # cd into the main worktree so the remaining git commands have a valid working
   # directory (our original cwd was inside the now-removed worktree).
-  cd "$(dirname "$common_dir")" || exit 1
+  cd "$(dirname "$common_dir")" || die
 
   if [ -z "$branch" ]; then
     err_echo "Worktree was detached; no branch to delete."
