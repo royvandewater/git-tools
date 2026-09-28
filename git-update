@@ -1,9 +1,14 @@
 #!/bin/bash
 
+pull_if_tracking(){
+  git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' >/dev/null 2>&1 || return 0
+  git pull --no-edit
+}
+
 main(){
   git fetch \
   && git fetch origin main:main \
-  && git pull --no-edit \
+  && pull_if_tracking \
   && git merge main --no-edit
 }
 main "$@"
