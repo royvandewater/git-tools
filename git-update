@@ -1,0 +1,9 @@
+#!/bin/bash
+
+main(){
+  git fetch \
+  && git fetch origin main:main \
+  && git pull --no-edit \
+  && git merge main --no-edit
+}
+main "$@"
